@@ -88,6 +88,7 @@ module "eks" {
 
   
   }
+}
 
 # Configure remote state in an S3 bucket
 terraform {
