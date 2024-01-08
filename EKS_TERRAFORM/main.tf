@@ -58,7 +58,8 @@ resource "aws_security_group" "sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-}
+}# ... (previous code)
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.0.4"
@@ -74,29 +75,15 @@ module "eks" {
 
   enable_irsa = true
 
-
-
   eks_managed_node_groups = {
-   
     green = {
       min_size     = 2
       max_size     = 2
       desired_size = 2
-
       instance_types = ["t2.medium"]
     }
-
-  
   }
 }
 
-# Configure remote state in an S3 bucket
-terraform {
-  backend "s3" {
-    bucket         = "infra-terraform-state-01"
-    key            = "terraform.tfstate"
-    region         = "us-east-1" # Replace with your desired region
-    #encrypt        = true
-    #dynamodb_table = "terraform_locks" # Optional, for state locking
-  }
-}
+
+
