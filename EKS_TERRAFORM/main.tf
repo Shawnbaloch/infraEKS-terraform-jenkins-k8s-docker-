@@ -1,45 +1,96 @@
-# VPC Module
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "2.0.0"
-
-  name = "prod-vpc"
-  cidr = "192.168.0.0/16"
-
-  azs            = ["us-east-1a", "us-east-1b", "us-east-1c"]
-  private_subnets = ["192.168.1.0/24", "192.168.2.0/24", "192.168.3.0/24"]
-  public_subnets  = ["192.168.4.0/24", "192.168.5.0/24", "192.168.6.0/24"]
-
-  enable_nat_gateway = true
-
-  # Security Group for allowing all traffic
-  ingress_cidr_blocks = ["0.0.0.0/0"]
+provider "aws" {
+ region = "us-east-1"
 }
 
-# EKS Cluster
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "19.0.4"
+resource "aws_vpc" "main" {
+ cidr_block = "10.0.0.0/16"
 
-  cluster_name    = "eks-cluster"
-  cluster_version = "1.23"
+ tags = {
+    Name = "terraform-eks-example"
+ }
+}
 
-  cluster_endpoint_private_access = true
-  cluster_endpoint_public_access  = true
+resource "aws_subnet" "main" {
+ count = 2
 
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.public_subnets
+ availability_zone       = data.aws_availability_zones.available.names[count.index]
+ cidr_block              = "10.0.${count.index}.0/24"
+ map_public_ip_on_launch = true
+ vpc_id                 = aws_vpc.main.id
 
-  enable_irsa = true
+ tags = {
+    Name = "terraform-eks-example"
+ }
+}
 
-  eks_managed_node_groups = {
-    green = {
-      min_size         = 2
-      max_size         = 2
-      desired_size     = 2
-      instance_types   = ["t2.medium"]
-      key_name          = "your-key-pair-name"
-      additional_security_group_ids = [module.vpc.security_group_id]
-    }
-  }
+data "aws_eks_cluster" "cluster" {
+ name = aws_eks_cluster.this.id
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+ name = aws_eks_cluster.this.id
+}
+
+provider "kubernetes" {
+ host                   = data.aws_eks_cluster.cluster.endpoint
+ cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority.0.data)
+ token                 = data.aws_eks_cluster_auth.cluster.token
+ load_config_file       = false
+}
+
+resource "aws_eks_cluster" "this" {
+ name     = "terraform-eks-example"
+ role_arn = aws_iam_role.eks_cluster.arn
+
+ vpc_config {
+    subnet_ids = aws_subnet.main.*.id
+ }
+
+ depends_on = [
+    "aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy",
+    "aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy",
+ ]
+}
+
+resource "aws_iam_role" "eks_cluster" {
+ name = "terraform-eks-example"
+
+ assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
+    ]
+ })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
+ policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+ role       = aws_iam_role.eks_cluster.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSServicePolicy" {
+ policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+ role       = aws_iam_role.eks_cluster.name
+}
+
+output "endpoint" {
+ value = data.aws_eks_cluster.cluster.endpoint
+}
+
+output "kubeconfig-certificate-authority-data" {
+ value = data.aws_eks_cluster.cluster.certificate_authority.0.data
+}
+
+output "cluster_security_group_id" {
+ value = data.aws_eks_cluster.cluster.vpc_config.0.cluster_security_group_id
+}
+
+output "cluster_id" {
+ value = data.aws_eks_cluster.cluster.id
 }
