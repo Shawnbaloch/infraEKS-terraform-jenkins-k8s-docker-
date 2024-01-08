@@ -1,4 +1,4 @@
- Create a VPC
+# Create a VPC
 resource "aws_vpc" "k8s_vpc" {
   cidr_block = "10.0.0.0/16"
   enable_dns_support = true
@@ -88,3 +88,14 @@ module "eks" {
 
   
   }
+
+# Configure remote state in an S3 bucket
+terraform {
+  backend "s3" {
+    bucket         = "infra-terraform-state-01"
+    key            = "terraform.tfstate"
+    region         = "us-east-1" # Replace with your desired region
+    #encrypt        = true
+    #dynamodb_table = "terraform_locks" # Optional, for state locking
+  }
+}
