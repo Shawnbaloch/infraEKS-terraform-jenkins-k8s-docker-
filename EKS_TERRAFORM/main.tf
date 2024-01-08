@@ -1,12 +1,13 @@
 # Create a VPC
 resource "aws_vpc" "k8s_vpc" {
-  cidr_block = "10.0.0.0/16"
-  enable_dns_support = true
-  enable_dns_hostnames = true
+  cidr_block            = "10.0.0.0/16"
+  enable_dns_support    = true
+  enable_dns_hostnames  = true
   tags = {
     Name = "k8s-infra"
   }
 }
+
 # Create an Elastic IP for the NAT Gateway
 resource "aws_eip" "nat_eip" {
   instance = null # You don't need to associate it with an EC2 instance
@@ -58,7 +59,8 @@ resource "aws_security_group" "sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-}# ... (previous code)
+
+# ... (previous code)
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -84,6 +86,3 @@ module "eks" {
     }
   }
 }
-
-
-
