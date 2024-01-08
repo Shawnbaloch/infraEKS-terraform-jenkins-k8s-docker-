@@ -13,7 +13,7 @@ module "vpc" {
   enable_nat_gateway = true
 
   # Security Group for allowing all traffic
-  security_group_ingress_cidr_blocks = ["0.0.0.0/0"]
+  ingress_cidr_blocks = ["0.0.0.0/0"]
 }
 
 # EKS Cluster
