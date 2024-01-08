@@ -11,27 +11,9 @@ module "vpc" {
   public_subnets  = ["192.168.4.0/24", "192.168.5.0/24", "192.168.6.0/24"]
 
   enable_nat_gateway = true
-}
 
-# Security Group for allowing all traffic
-resource "aws_security_group" "allow_all" {
-  name        = "allow-all"
-  description = "Allow all traffic"
-  vpc_id      = module.vpc.vpc_id
-
-  ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # Security Group for allowing all traffic
+  security_group_ingress_cidr_blocks = ["0.0.0.0/0"]
 }
 
 # EKS Cluster
@@ -57,7 +39,7 @@ module "eks" {
       desired_size     = 2
       instance_types   = ["t2.medium"]
       key_name          = "your-key-pair-name"
-      additional_security_group_ids = [aws_security_group.allow_all.id]
+      additional_security_group_ids = [module.vpc.security_group_id]
     }
   }
 }
