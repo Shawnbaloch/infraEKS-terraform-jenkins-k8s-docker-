@@ -1,107 +1,90 @@
-# Define IAM policy document for assuming roles
-data "aws_iam_policy_document" "assume_role" {
-  statement {
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["eks.amazonaws.com"]
+ Create a VPC
+resource "aws_vpc" "k8s_vpc" {
+  cidr_block = "10.0.0.0/16"
+  enable_dns_support = true
+  enable_dns_hostnames = true
+  tags = {
+    Name = "k8s-infra"
+  }
+}
+# Create an Elastic IP for the NAT Gateway
+resource "aws_eip" "nat_eip" {
+  instance = null # You don't need to associate it with an EC2 instance
+}
+
+# Create a public subnet
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = aws_vpc.k8s_vpc.id
+  cidr_block              = "10.0.0.0/24"
+  availability_zone       = "us-eas-1" # Replace with your desired AZ
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "public-subnet"
+  }
+}
+
+# Create a NAT Gateway for the public subnet
+resource "aws_nat_gateway" "nat_gateway" {
+  allocation_id = aws_eip.nat_eip.id
+  subnet_id     = aws_subnet.public_subnet.id
+}
+
+# Create a security group for SSH and allow all traffic
+resource "aws_security_group" "sg" {
+  name        = "k8s-infra-sg"
+  description = "Security group for Kubernetes infrastructure"
+  vpc_id      = aws_vpc.k8s_vpc.id
+
+  # Allow SSH and all traffic (for demonstration purposes, consider tightening this)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Allow all outbound traffic (for demonstration purposes, consider tightening this)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+}
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "19.0.4"
+
+  cluster_name    = "ts4u"
+  cluster_version = "1.23"
+
+  cluster_endpoint_private_access = true
+  cluster_endpoint_public_access  = true
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.public_subnets
+
+  enable_irsa = true
+
+
+
+  eks_managed_node_groups = {
+   
+    green = {
+      min_size     = 2
+      max_size     = 2
+      desired_size = 2
+
+      instance_types = ["t2.medium"]
     }
-    actions = ["sts:AssumeRole"]
+
+  
   }
-}
-
-# IAM Role for EKS cluster
-resource "aws_iam_role" "example" {
-  name               = "eks-cluster-cloud"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
-}
-
-# Attach AmazonEKSClusterPolicy to EKS cluster role
-resource "aws_iam_role_policy_attachment" "example-AmazonEKSClusterPolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.example.name
-}
-
-# Get VPC data
-data "aws_vpc" "default" {
-  default = true
-}
-
-# Get public subnets for the EKS cluster
-data "aws_subnets" "public" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# Provision EKS cluster
-resource "aws_eks_cluster" "example" {
-  name     = "EKS_CLOUD"
-  role_arn = aws_iam_role.example.arn
-
-  vpc_config {
-    subnet_ids = data.aws_subnets.public.ids
-  }
-
-  # Ensure that IAM Role permissions are created before and deleted after EKS Cluster handling.
-  # Otherwise, EKS will not be able to properly delete EKS managed EC2 infrastructure such as Security Groups.
-  depends_on = [
-    aws_iam_role_policy_attachment.example-AmazonEKSClusterPolicy,
-  ]
-}
-
-# IAM Role for EKS node group
-resource "aws_iam_role" "example1" {
-  name = "eks-node-group-cloud"
-
-  assume_role_policy = jsonencode({
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-    Version = "2012-10-17"
-  })
-}
-
-# Attach policies to EKS node group role
-resource "aws_iam_role_policy_attachment" "example-AmazonEKSWorkerNodePolicy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.example1.name
-}
-
-resource "aws_iam_role_policy_attachment" "example-AmazonEKS_CNI_Policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.example1.name
-}
-
-resource "aws_iam_role_policy_attachment" "example-AmazonEC2ContainerRegistryReadOnly" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.example1.name
-}
-
-# Create EKS node group
-resource "aws_eks_node_group" "example" {
-  cluster_name    = aws_eks_cluster.example.name
-  node_group_name = "Node-cloud"
-  node_role_arn   = aws_iam_role.example1.arn
-  subnet_ids      = data.aws_subnets.public.ids
-
-  scaling_config {
-    desired_size = 1
-    max_size     = 2
-    min_size     = 1
-  }
-  instance_types = ["t2.medium"]
-
-  # Ensure that IAM Role permissions are created before and deleted after EKS Node Group handling.
-  # Otherwise, EKS will not be able to properly delete EC2 Instances and Elastic Network Interfaces.
-  depends_on = [
-    aws_iam_role_policy_attachment.example-AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.example-AmazonEKS_CNI_Policy,
-    aws_iam_role_policy_attachment.example-AmazonEC2ContainerRegistryReadOnly,
-  ]
-}
